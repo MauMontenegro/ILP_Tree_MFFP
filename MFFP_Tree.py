@@ -9,6 +9,10 @@ import scipy as sp
 import json
 import random as rnd
 import re
+import sys
+import copy
+
+BN = 1000
 
 def GDN(dv_string):
     new_string= re.sub(r"[\[]","",dv_string)
@@ -17,7 +21,7 @@ def GDN(dv_string):
     return split_key
 
 # Generate Random Tree with initial fire_root
-N = 20  # Number of Nodes
+N = 10  # Number of Nodes
 seed = 140  # Experiment Seed
 scale = 10  # Scale of distances
 starting_fire = rnd.randint(0, N - 1) # Fire in random node
@@ -201,11 +205,86 @@ for lpvariables_ in lpvariables_per_phase:
 # 3) At phase 0, we only enable edge transitions that lead B from his initial position p_0
 #    to nodes which B can reach before fire does.
 prob += (
-        lpSum([lpvariables_init[i] * T_Ad_Sym[GDN(i)[0]][GDN(i)[1]] for i in variables_init]) <=
-        lpSum([lpvariables_init[i] * levels[GDN(i)[1]] for i in variables_init]),
+        lpSum([lpvariables_init[i] * T_Ad_Sym[int(GDN(i)[0])][int(GDN(i)[1])] for i in variables_init]) <=
+        lpSum([lpvariables_init[i] * levels[int(GDN(i)[1])] for i in variables_init]),
         "Initial_Distance_Restriction",
     )
 
+# 4) From phase 1 to n we enable only edges that lead B to valid nodes from his current position. The sum of distances
+#    from p0 to current position following active edges must be less that the time it takes the fire to reach a node from
+#    the nearest fire root.
+r_init= lpSum([lpvariables_init[i] * T_Ad_Sym[int(GDN(i)[0])][int(GDN(i)[1])] for i in variables_init])
+counter=0
+dist_r_i = r_init
+dist_r_d=0
+for lpvariables_ in lpvariables_per_phase: # At each loop sum one new phase (Cumulative)
+    dist_r_i += lpSum([lpvariables_[i] * T_Ad_Sym[int(GDN(i)[0])][int(GDN(i)[1])] for i in variables[counter]])
+    dist_r_d = lpSum([lpvariables_[i] * levels[int(GDN(i)[1])] for i in variables[counter]])
+    disable_r = BN * (1 - lpSum([lpvariables_[i] for i in variables[counter]]))
+    dist_r_d += disable_r
+    prob += (
+        dist_r_i <= dist_r_d,
+        "Distance_Restriction_%s" %counter,
+    )
+    counter+=1
+
+# 5) We only enable one defended node in the path of each leaf to the root
+leaf_nodes = [node for node in T.nodes() if T.in_degree(node)!= 0 and T.out_degree(node) == 0]
+restricted_ancestors={}
+for leaf in leaf_nodes:
+    restricted_ancestors[leaf] = list(nx.ancestors(T , leaf))
+    restricted_ancestors[leaf].remove(starting_fire)
+    restricted_ancestors[leaf].insert(0,leaf)
+print(restricted_ancestors)
+
+p0 = str(N)
+
+for leaf in restricted_ancestors:
+    r=0
+    for node in restricted_ancestors[leaf]:
+        # Generate only edges that goes to 'node'
+        valid_nodes = Nodes.copy()
+        valid_nodes.remove(node)
+        valid_edges=[[int(i),int(node)] for i in valid_nodes]
+        l = str(node)
+        key_init_string='[' +p0 + ', ' + l + ', ' + '0]'
+        r+=lpvariables_init[key_init_string]
+        counter=0
+        for lpvariables_ in lpvariables_per_phase:
+            valid_edges_tmp = valid_edges.copy()
+            for edge in valid_edges_tmp:
+                if len(edge) >2:
+                    edge.pop(2)
+                edge = edge.insert(2,counter+1)
+            valid_edges_keys = [str(element) for element in valid_edges_tmp]
+            lpv_edges_phase = lpSum(lpvariables_[i] for i in valid_edges_keys)
+            r+=lpv_edges_phase
+            counter += 1
+    print('rest for leaf {l}'.format(l=leaf))
+    print(r)
+    prob += (
+        r <= 1,
+        "Leaf_Restriction_{l},{n}".format(l=leaf,n=node),
+    )
 
 
+# The problem data is written to an .lp file
+prob.writeLP("MFFP_Tree.lp")
 
+# The problem is solved using PuLP's choice of Solver (Default is CBC: Coin or branch and cut)
+prob.solve()
+
+# The status of the solution is printed to the screen
+print("Status:", LpStatus[prob.status])
+
+# Each of the variables is printed with it's resolved optimum value
+solution = {}
+for v in prob.variables():
+    print(v.name, "=", v.varValue)
+    node_name = v.name.split("_")
+    solution[node_name[1]] = v.varValue
+
+# Nodes that are defended during solution
+sol_nodes=[k for k,v in solution.items() if v == 1]
+
+print(sol_nodes)
