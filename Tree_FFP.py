@@ -228,3 +228,26 @@ print(sol_restriction_levels)
 
 # The optimised objective function value is printed to the screen
 print("Total Saved Trees = ", value(prob.objective))
+
+
+
+
+# Now for next consecutive phases
+for i in range(0,N-1):
+    for item in items_per_phase[i]:
+        keys=[]
+        k_pos_var = lpvariables_per_phase[i][item]
+        valid_input_edge = GDN(item)[1]
+        sum = k_pos_var
+        for item_ in lpvariables_per_phase[i+1]:
+            valid_input_edge_ = GDN(item_)[0]
+            if int(valid_input_edge) != int(valid_input_edge_):  # Restriction over other nodes
+                keys.append(item_)
+        sum += lpSum(lpvariables_per_phase[i+1][j] for j in keys)
+        #print("Restriction in Phase: {p} for element {n}".format(p=i+1,n=item))
+        #print(sum)
+        prob += (
+            sum <= 1,
+            "Continuity_Restriction_{p},{n}".format(p=i,n=item),
+        )
+

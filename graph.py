@@ -3,8 +3,6 @@ import networkx as nx
 import json
 import numpy as np
 
-
-
 class graphAnimator(Scene):
     def construct(self):
         # Get Original Tree Structure

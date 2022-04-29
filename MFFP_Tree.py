@@ -5,99 +5,147 @@ from pulp import *
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy as sp
 import json
 import random as rnd
 import re
-import sys
-import copy
 
-BN = 1000
 
+BN = 1000 # Big Number for Restrictions
+
+# Function that split string of [u,v,p]
+# where (u,v) is an edge and p is the phase
 def GDN(dv_string):
     new_string= re.sub(r"[\[]","",dv_string)
     new_string = re.sub(r"[\]]", "", new_string)
     split_key=new_string.split(',')
     return split_key
 
-# Generate Random Tree with initial fire_root
-N = 10  # Number of Nodes
-seed = 140  # Experiment Seed
-scale = 10  # Scale of distances
-starting_fire = rnd.randint(0, N - 1) # Fire in random node
-print('Starting fire in Node: {sf}'.format(sf=starting_fire))
+load = True
+if load:
+    T = nx.read_adjlist("instance/MFF_Tree.adjlist")
+    # Relabeling Nodes
+    mapping={}
+    for node in T.nodes:
+        mapping[node] = int(node)
+    T= nx.relabel_nodes(T, mapping)
+    T_Ad_Sym = np.load("instance/FDM_MFFP.npy")
+    lay = open('instance/layout_MFF.json')
+    pos={}
+    pos_=json.load(lay)
 
-# Adding Bulldozer
-a_x_pos = rnd.uniform(-1, 1) * scale
-a_y_pos = rnd.uniform(-1, 1) * scale
-print('Initial Bulldozer Position: [{bx},{by}]'.format(bx=a_x_pos,by=a_y_pos))
+    for position in pos_:
+        pos[int(position)]=pos_[position]
+    # Get Instance Parameters
+    p = open('instance/instance_info.json')
+    parameters = json.load(p)
+    N = parameters['N']
+    seed = parameters['seed']
+    scale = parameters['scale']
+    starting_fire = parameters['start_fire']
 
-# Create a Random Tree (nx use a Prufer Sequence) and get 'pos' layout for nodes
-T = nx.random_tree(n=N, seed=seed)
-# Induce a BFS path to get the fire propagation among levels
-T = nx.bfs_tree(T, starting_fire)
-# Could use spring or spectral Layout
-pos = nx.spring_layout(T, seed=seed)
+    a_x_pos=parameters['a_pos_x']
+    a_y_pos = parameters['a_pos_y']
 
-# Create Empty Adjacency Matrix for Full Distances
-T_Ad = np.zeros((N + 1, N + 1))
+    T = nx.bfs_tree(T, starting_fire)
+    T.add_node(N)
 
-# Save Original Tree in a "adjlist" file
-nx.write_adjlist(T, "MFF_Tree.adjlist")
-nx.draw_networkx(T,pos=pos)
-plt.show()
-# Create Adjacency Matrix with escalated distances in layout
-for row in range(0, N):
-    for column in range(row, N):
-        if row == column:
-            T_Ad[row][column] = 0
-        else:
-            x_1 = pos[row][0]
-            x_2 = pos[column][0]
-            y_1 = pos[row][1]
-            y_2 = pos[column][1]
-            dist = np.sqrt((x_1 - x_2) ** 2 + (y_1 - y_2) ** 2)
-            T_Ad[row][column] = dist * scale  # Scale factor of 10
+    #pos[N] = [a_x_pos, a_y_pos]
+    nx.draw_networkx(T, pos=pos)
+    # plt.show()
+    plt.savefig('Graph_Test.png')
 
-#Scale Distances in Layout to better plot
-for element in pos:
-    pos[element][0] = pos[element][0] * scale
-    pos[element][1] = pos[element][1] * scale
+    #nx.draw_networkx(T, pos=pos)
+    # plt.show()
+    #plt.savefig('Graph_Test.png')
+else:
+    # Generate Random Tree with initial fire_root
+    N = 12  # Number of Nodes
+    seed = 150  # Experiment Seed
+    scale = 1  # Scale of distances
+    starting_fire = rnd.randint(0, N - 1) # Fire in random node
+    print('Starting fire in Node: {sf}'.format(sf=starting_fire))
 
-# Adding Bulldozer distances to Full Adjacency Matrix
-for node in range(0, N):
-    x_1 = pos[node][0]
-    x_2 = a_x_pos
-    y_1 = pos[node][1]
-    y_2 = a_y_pos
-    dist = np.sqrt((x_1 - x_2) ** 2 + (y_1 - y_2) ** 2)
-    T_Ad[node][N] = dist
+    # Adding Bulldozer
+    a_x_pos = rnd.uniform(-1, 1) * scale
+    a_y_pos = rnd.uniform(-1, 1) * scale
+    print('Initial Bulldozer Position: [{bx},{by}]'.format(bx=a_x_pos,by=a_y_pos))
 
-# Create a Symmetric Matrix with upper part of T_Ad (For symmetric distances)
-T_Ad_Sym = np.triu(T_Ad) + np.tril(T_Ad.T)
+    # Create a Random Tree (nx use a Prufer Sequence) and get 'pos' layout for nodes
+    T = nx.random_tree(n=N, seed=seed)
+    # Induce a BFS path to get the fire propagation among levels
+    T = nx.bfs_tree(T, starting_fire)
+    # Could use spring or spectral Layout
+    pos = nx.spring_layout(T, seed=seed)
 
-# Add Bulldozer Node to Tree and add his escalated position
-T.add_node(N)
-pos[N] = [a_x_pos, a_y_pos]
+    # Create Empty Adjacency Matrix for Full Distances
+    T_Ad = np.zeros((N + 1, N + 1))
 
-#Saving Full Distance Matrix
-f = open("Full_Matrix.txt", "w")
-f.write(str(T_Ad_Sym))
+    # Save Original Tree in a "adjlist" file
+    nx.write_adjlist(T, "MFF_Tree.adjlist")
+    nx.draw_networkx(T,pos=pos)
+    #plt.show()
+    plt.savefig('Graph_Test.png')
 
-# Just Showing NX Tree
-#nx.draw_networkx(T, pos=pos, with_labels=True)
-#plt.show()
+    # Create Adjacency Matrix with escalated distances in layout
+    for row in range(0, N):
+        for column in range(row, N):
+            if row == column:
+                T_Ad[row][column] = 0
+            else:
+                x_1 = pos[row][0]
+                x_2 = pos[column][0]
+                y_1 = pos[row][1]
+                y_2 = pos[column][1]
+                dist = np.sqrt((x_1 - x_2) ** 2 + (y_1 - y_2) ** 2)
+                T_Ad[row][column] = dist * scale  # Scale factor of 10
 
-# Saving Layout in to a json file
-for element in pos:
-    pos[element] = list(pos[element])
+    #Scale Distances in Layout to better plot
+    for element in pos:
+        pos[element][0] = pos[element][0] * scale
+        pos[element][1] = pos[element][1] * scale
 
-with open('layout_MFF.json', 'w') as layout_file:
-    layout_file.write(json.dumps(pos))
+    # Adding Bulldozer distances to Full Adjacency Matrix
+    for node in range(0, N):
+        x_1 = pos[node][0]
+        x_2 = a_x_pos
+        y_1 = pos[node][1]
+        y_2 = a_y_pos
+        dist = np.sqrt((x_1 - x_2) ** 2 + (y_1 - y_2) ** 2)
+        T_Ad[node][N] = dist
+
+    # Create a Symmetric Matrix with upper part of T_Ad (For symmetric distances)
+    T_Ad_Sym = np.triu(T_Ad) + np.tril(T_Ad.T)
+
+    print(T_Ad_Sym)
+
+    # Add Bulldozer Node to Tree and add his escalated position
+    T.add_node(N)
+    pos[N] = [a_x_pos, a_y_pos]
+
+    #Saving Full Distance Matrix
+    f = open("Full_Matrix.txt", "w")
+    f.write(str(T_Ad_Sym))
+
+    # Just Showing NX Tree
+    nx.draw_networkx(T, pos=pos, with_labels=True)
+    #plt.show()
+    plt.savefig('Graph_Test.png')
+
+    # Saving Layout in to a json file
+    for element in pos:
+        pos[element] = list(pos[element])
+
+    with open('layout_MFF.json', 'w') as layout_file:
+        layout_file.write(json.dumps(pos))
 
 # Build Node Structure for LP
 Nodes = list(T.nodes)
+print(Nodes)
+
+print(starting_fire)
 Nodes.remove(starting_fire)
+print(Nodes)
+print(N)
 Nodes.remove(N)
 print(Nodes)
 
@@ -106,14 +154,17 @@ print(Nodes)
 # Pre-Compute Burning_Times for each node in T
 levels = nx.single_source_shortest_path_length(T, starting_fire) #Obtain Level in Tree for each node
 print(levels)
+print("Levels of each node in directed Tree:")
+print(levels)
 
-# Pre-Compute time from node to node in already saved in Full_Adjacency Matrix
+# Pre-Compute time from node to node in Full_Adjacency Matrix
 
-# Pre-Compute cardinality of a node sub-tree (saved nodes if defend)
+# Pre-Compute cardinality of a node sub-tree (saved nodes if defended)
 weights = {}
 for node in Nodes:
     weights[node] = len(nx.descendants(T, node)) + 1
 
+print("Weights for each node")
 print(weights)
 ############################################################################################################
 
@@ -129,18 +180,22 @@ for node1 in Nodes:
             edge = [node1, node2]
             all_edges.append(edge)
 edge_number = len(all_edges)
+print("All edges without initial position")
+print(all_edges)
 
 # Create all edges for initial position
 all_initial_edges = []
 for node1 in Nodes:
     edge=[N,node1]
     all_initial_edges.append(edge)
+print("Initial Edges")
+print(all_initial_edges)
 
 # Create all phases for all edges without initial pos
 variables = []
 # Array Containing all edges per phase
 phases = [x for x in range(1, N+1)]           # Array of total phases (Max node number)
-print(phases)
+
 for phase in phases:
     edges_per_phase={}
     for edge in all_edges:                    # Here, we fill all edges in this phase
@@ -148,6 +203,10 @@ for phase in phases:
         x.append(phase)
         edges_per_phase[str(x)] = edge[1]
     variables.append(edges_per_phase)
+
+print("Edges Per Phase:")
+print(variables)
+
 
 items_per_phase = []
 for phase in phases:
@@ -160,24 +219,38 @@ for node in Nodes:
     x.append(0)
     variables_init[str(x)] = node
 items_init = variables_init.keys()
+print("Initial Phase")
+print(variables_init)
 
 # Create Initial Decision Variables for LP with restrictions in range and type
 lpvariables_init = LpVariable.dicts("Defend", items_init, 0, 1, LpBinary)
+print("Initial D.V.")
+print(lpvariables_init)
 
 # Create Decision Variables for LP with restrictions in range and type for each phase
 lpvariables_per_phase=[]
 for phase in phases:
     lpvariables = LpVariable.dicts("Defend", items_per_phase[phase-1], 0, 1, LpBinary)
     lpvariables_per_phase.append(lpvariables)
+print("Other D.V.")
+print(lpvariables_per_phase)
+
 
 # Sum Decision Variables
-lps=0
+lps = 0
 counter=0
-for phase in lpvariables_per_phase:
-    lps+= lpSum([phase[i] * weights[variables[counter][i]] for i in variables[counter]])
-    counter+=1
 
 lps_init = lpSum([lpvariables_init[f] * weights[variables_init[f]] for f in variables_init])
+print("LPS Initial:")
+print(lps_init)
+
+for phase in lpvariables_per_phase:
+    lps += lpSum([phase[i] * weights[variables[counter][i]] for i in variables[counter]])
+    counter += 1
+
+print("Other LPS")
+print(lps)
+
 lps_total = lps + lps_init
 
 # Construct optimization problem
@@ -185,11 +258,15 @@ prob += (lps_total,
     "Sum_of_Defended_Edges",
 )
 
+print("\n \n Constraints:\n")
 # Constraints
 #################################################################################################################
 # 1) At phase 0, we only enable at most one edge to be active from p_0 to any node v
+print("First Constraint Variables")
+first_constraint = lpSum([lpvariables_init[i] for i in variables_init])
+print(first_constraint)
 prob += (
-        lpSum([lpvariables_init[i] for i in variables_init]) <= 1,
+         first_constraint <= 1,
         "Initial_Edges",
     )
 
@@ -204,6 +281,8 @@ for lpvariables_ in lpvariables_per_phase:
 
 # 3) At phase 0, we only enable edge transitions that lead B from his initial position p_0
 #    to nodes which B can reach before fire does.
+print(variables_init)
+
 prob += (
         lpSum([lpvariables_init[i] * T_Ad_Sym[int(GDN(i)[0])][int(GDN(i)[1])] for i in variables_init]) <=
         lpSum([lpvariables_init[i] * levels[int(GDN(i)[1])] for i in variables_init]),
@@ -260,13 +339,73 @@ for leaf in restricted_ancestors:
             lpv_edges_phase = lpSum(lpvariables_[i] for i in valid_edges_keys)
             r+=lpv_edges_phase
             counter += 1
-    print('rest for leaf {l}'.format(l=leaf))
+    print('restriction for leaf {l}'.format(l=leaf))
     print(r)
     prob += (
         r <= 1,
         "Leaf_Restriction_{l},{n}".format(l=leaf,n=node),
     )
 
+# 6) If we choose an edge at phase K, next phase must include the last node in the edge, others will
+#   be invalid edges.
+
+
+for element in variables_init:
+    initial_pos_var = lpvariables_init[element]
+    valid_input_edge = GDN(element)[1]
+    print("Initial Restriction for node {n}".format(n=valid_input_edge))
+    for j in range(0, N ):
+        sum = initial_pos_var
+        keys = []
+        for element_ in lpvariables_per_phase[j]: # Phase K+1 = 1
+            valid_input_edge_ = GDN(element_)[0]
+            if int(valid_input_edge) != int(valid_input_edge_): # Restriction over other nodes
+                    keys.append(element_)
+        sum+=lpSum(lpvariables_per_phase[j][i] for i in keys)
+        print("\nRestriction")
+        print(sum)
+        prob+=(
+            sum <= 1,
+            "Initial_Continuity_Restriction_{l}_{p}".format(l=element,p=j),
+        )
+
+
+# Now for next consecutive phases
+for node in Nodes:
+    for phase in range(0, N-1):
+        keys_k=[]
+        keys_kp1=[]
+        sum=0
+        # Sum variables that end in node v at phase K
+        for item in items_per_phase[phase]:
+            valid_input_edge = GDN(item)[1]
+            if int(valid_input_edge) == int(node):
+                keys_k.append(item)
+        sum += lpSum(lpvariables_per_phase[phase][i] for i in keys_k)
+        # Sum all variables that not start at v at phase k+1
+        for item_ in lpvariables_per_phase[phase+1]:
+            valid_input_edge_ = GDN(item_)[0]
+            if int(node) != int(valid_input_edge_):  # Restriction over other nodes
+                keys_kp1.append(item_)
+        sum += lpSum(lpvariables_per_phase[phase+1][j] for j in keys_kp1)
+        prob += (
+            sum <= 1,
+            "Continuity_Restriction_{p},{n}".format(p=node, n=phase),
+        )
+
+
+# 7) We force solution to start at Agent initial position
+force_init= lpSum(lpvariables_init[i] for i in variables_init)
+
+for j in range(0,N):
+    force_init_r = lpSum(lpvariables_per_phase[j][i] for i in items_per_phase[j])
+    prob += (
+                force_init >= force_init_r,
+                "Force_Initial_{p}".format(p=j),
+            )
+
+
+##################################
 
 # The problem data is written to an .lp file
 prob.writeLP("MFFP_Tree.lp")
@@ -280,11 +419,16 @@ print("Status:", LpStatus[prob.status])
 # Each of the variables is printed with it's resolved optimum value
 solution = {}
 for v in prob.variables():
-    print(v.name, "=", v.varValue)
-    node_name = v.name.split("_")
-    solution[node_name[1]] = v.varValue
+    #print(v.name, "=", v.varValue)
+    solution[v.name] = v.varValue
+
+# The optimised objective function value is printed to the screen
+print("Total Saved Trees = ", value(prob.objective))
 
 # Nodes that are defended during solution
 sol_nodes=[k for k,v in solution.items() if v == 1]
 
 print(sol_nodes)
+
+
+
