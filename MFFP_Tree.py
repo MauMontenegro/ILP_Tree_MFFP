@@ -21,6 +21,7 @@ def GDN(dv_string):
     return split_key
 
 load = True
+
 if load:
     T = nx.read_adjlist("instance/MFF_Tree.adjlist")
     # Relabeling Nodes
@@ -51,12 +52,11 @@ if load:
 
     #pos[N] = [a_x_pos, a_y_pos]
     nx.draw_networkx(T, pos=pos)
+    nx.draw_networkx_nodes(T, pos, T.nodes, node_color="tab:red")
     # plt.show()
     plt.savefig('Graph_Test.png')
 
-    #nx.draw_networkx(T, pos=pos)
-    # plt.show()
-    #plt.savefig('Graph_Test.png')
+
 else:
     # Generate Random Tree with initial fire_root
     N = 12  # Number of Nodes
@@ -159,13 +159,6 @@ print(levels)
 
 # Pre-Compute time from node to node in Full_Adjacency Matrix
 
-# Pre-Compute cardinality of a node sub-tree (saved nodes if defended)
-weights = {}
-for node in Nodes:
-    weights[node] = len(nx.descendants(T, node)) + 1
-
-print("Weights for each node")
-print(weights)
 ############################################################################################################
 
 # Create LP Problem
@@ -176,20 +169,19 @@ prob = LpProblem("Moving_Firefighter_Tree", LpMaximize)
 all_edges = []
 for node1 in Nodes:
     for node2 in Nodes:
-        if node1!=node2:
-            edge = [node1, node2]
-            all_edges.append(edge)
+        #if node1 != node2:
+        edge = [node1, node2]
+        all_edges.append(edge)
 edge_number = len(all_edges)
-print("All edges without initial position")
-print(all_edges)
+
+
 
 # Create all edges for initial position
 all_initial_edges = []
 for node1 in Nodes:
     edge=[N,node1]
     all_initial_edges.append(edge)
-print("Initial Edges")
-print(all_initial_edges)
+
 
 # Create all phases for all edges without initial pos
 variables = []
@@ -201,12 +193,20 @@ for phase in phases:
     for edge in all_edges:                    # Here, we fill all edges in this phase
         x = edge.copy()
         x.append(phase)
-        edges_per_phase[str(x)] = edge[1]
+        if edge[0] == edge[1]:
+            edges_per_phase[str(x)] = 'f'
+        else:
+            edges_per_phase[str(x)] = edge[1]
     variables.append(edges_per_phase)
 
-print("Edges Per Phase:")
-print(variables)
+# Pre-Compute cardinality of a node sub-tree (saved nodes if defended)
+weights = {}
+for node in Nodes:
+    weights[node] = len(nx.descendants(T, node)) + 1
+weights['f'] = 0
 
+print("Weights for each node")
+print(weights)
 
 items_per_phase = []
 for phase in phases:
@@ -219,37 +219,31 @@ for node in Nodes:
     x.append(0)
     variables_init[str(x)] = node
 items_init = variables_init.keys()
-print("Initial Phase")
-print(variables_init)
+
 
 # Create Initial Decision Variables for LP with restrictions in range and type
 lpvariables_init = LpVariable.dicts("Defend", items_init, 0, 1, LpBinary)
-print("Initial D.V.")
-print(lpvariables_init)
+
 
 # Create Decision Variables for LP with restrictions in range and type for each phase
 lpvariables_per_phase=[]
 for phase in phases:
     lpvariables = LpVariable.dicts("Defend", items_per_phase[phase-1], 0, 1, LpBinary)
     lpvariables_per_phase.append(lpvariables)
-print("Other D.V.")
-print(lpvariables_per_phase)
-
 
 # Sum Decision Variables
 lps = 0
 counter=0
 
 lps_init = lpSum([lpvariables_init[f] * weights[variables_init[f]] for f in variables_init])
-print("LPS Initial:")
-print(lps_init)
+
+print(variables[0])
 
 for phase in lpvariables_per_phase:
     lps += lpSum([phase[i] * weights[variables[counter][i]] for i in variables[counter]])
     counter += 1
 
-print("Other LPS")
-print(lps)
+
 
 lps_total = lps + lps_init
 
@@ -258,15 +252,15 @@ prob += (lps_total,
     "Sum_of_Defended_Edges",
 )
 
-print("\n \n Constraints:\n")
+
 # Constraints
 #################################################################################################################
 # 1) At phase 0, we only enable at most one edge to be active from p_0 to any node v
-print("First Constraint Variables")
+
 first_constraint = lpSum([lpvariables_init[i] for i in variables_init])
-print(first_constraint)
+
 prob += (
-         first_constraint <= 1,
+         first_constraint == 1,
         "Initial_Edges",
     )
 
@@ -274,14 +268,14 @@ prob += (
 counter=0
 for lpvariables_ in lpvariables_per_phase:
     prob += (
-        lpSum([lpvariables_[i] for i in variables[counter]]) <= 1,
+        lpSum([lpvariables_[i] for i in variables[counter]]) == 1,
         "Edges_Phase_%s" %counter,
     )
     counter+=1
 
 # 3) At phase 0, we only enable edge transitions that lead B from his initial position p_0
 #    to nodes which B can reach before fire does.
-print(variables_init)
+
 
 prob += (
         lpSum([lpvariables_init[i] * T_Ad_Sym[int(GDN(i)[0])][int(GDN(i)[1])] for i in variables_init]) <=
@@ -296,8 +290,11 @@ r_init= lpSum([lpvariables_init[i] * T_Ad_Sym[int(GDN(i)[0])][int(GDN(i)[1])] fo
 counter=0
 dist_r_i = r_init
 dist_r_d=0
+
+print("\\Assad  sadasd  asdsd\\")
 for lpvariables_ in lpvariables_per_phase: # At each loop sum one new phase (Cumulative)
     dist_r_i += lpSum([lpvariables_[i] * T_Ad_Sym[int(GDN(i)[0])][int(GDN(i)[1])] for i in variables[counter]])
+
     dist_r_d = lpSum([lpvariables_[i] * levels[int(GDN(i)[1])] for i in variables[counter]])
     disable_r = BN * (1 - lpSum([lpvariables_[i] for i in variables[counter]]))
     dist_r_d += disable_r
@@ -314,7 +311,7 @@ for leaf in leaf_nodes:
     restricted_ancestors[leaf] = list(nx.ancestors(T , leaf))
     restricted_ancestors[leaf].remove(starting_fire)
     restricted_ancestors[leaf].insert(0,leaf)
-print(restricted_ancestors)
+
 
 p0 = str(N)
 
@@ -339,8 +336,7 @@ for leaf in restricted_ancestors:
             lpv_edges_phase = lpSum(lpvariables_[i] for i in valid_edges_keys)
             r+=lpv_edges_phase
             counter += 1
-    print('restriction for leaf {l}'.format(l=leaf))
-    print(r)
+
     prob += (
         r <= 1,
         "Leaf_Restriction_{l},{n}".format(l=leaf,n=node),
@@ -349,11 +345,9 @@ for leaf in restricted_ancestors:
 # 6) If we choose an edge at phase K, next phase must include the last node in the edge, others will
 #   be invalid edges.
 
-
 for element in variables_init:
     initial_pos_var = lpvariables_init[element]
     valid_input_edge = GDN(element)[1]
-    print("Initial Restriction for node {n}".format(n=valid_input_edge))
     for j in range(0, N ):
         sum = initial_pos_var
         keys = []
@@ -362,8 +356,6 @@ for element in variables_init:
             if int(valid_input_edge) != int(valid_input_edge_): # Restriction over other nodes
                     keys.append(element_)
         sum+=lpSum(lpvariables_per_phase[j][i] for i in keys)
-        print("\nRestriction")
-        print(sum)
         prob+=(
             sum <= 1,
             "Initial_Continuity_Restriction_{l}_{p}".format(l=element,p=j),
@@ -395,15 +387,21 @@ for node in Nodes:
 
 
 # 7) We force solution to start at Agent initial position
-force_init= lpSum(lpvariables_init[i] for i in variables_init)
-
-for j in range(0,N):
-    force_init_r = lpSum(lpvariables_per_phase[j][i] for i in items_per_phase[j])
-    prob += (
+force_init = lpSum(lpvariables_init[i] for i in variables_init)
+force_init_r = lpSum(lpvariables_per_phase[0][i] for i in items_per_phase[0])
+prob += (
                 force_init >= force_init_r,
-                "Force_Initial_{p}".format(p=j),
+                "Force_Initial",
             )
 
+# Force consecutive phases
+for phase in range(0,N-1):
+    force_k=lpSum(lpvariables_per_phase[phase][i] for i in items_per_phase[phase])
+    force_k_p_1 = lpSum(lpvariables_per_phase[phase+1][i] for i in items_per_phase[phase+1])
+    prob += (
+        force_k >= force_k_p_1,
+        "Force_next_{p}".format(p=phase),
+    )
 
 ##################################
 
