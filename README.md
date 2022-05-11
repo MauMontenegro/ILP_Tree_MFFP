@@ -36,6 +36,14 @@ we have a notion of distance or cost to travel making the problem more restricti
 
 ---
 
+## Usage
+
+```terminal
+python MFFP_Tree.py
+```
+
+---
+
 ## Instances
 
 We can create our own instance or load one by changing the *load* variable status: True for load an instance or False to create a new one.
@@ -80,3 +88,10 @@ solver = pl.CPLEX_CMD(path=path_to_cplex)
     #
 result = model.solve(solver)
 ```
+
+---
+
+## On Progress
+- Make experiments with incremental nodes and solvers. 🚧
+- Include different types of Tree generators. 🚧
+- Include animations with 'manim' library. 🚧
