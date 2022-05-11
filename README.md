@@ -1,4 +1,4 @@
-# Moving Fire Fighter Problem: Integer Linear Programming Solution for Trees
+# Moving Firefighter Problem: Integer Linear Programming Solution for Trees
 
 <p align="center">
     <a href="images/logo_MFFP.png"><img src="images/logo_MFFP.png" width="200"></a>
