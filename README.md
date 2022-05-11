@@ -2,6 +2,13 @@
 
 <p align="center">
     <a href="images/logo_MFFP.png"><img src="images/logo_MFFP.png" width="200"></a>
+    <br />
+    <br />
+    <a href="https://semver.org/"><img src="https://img.shields.io/badge/version-1.0.0-blue" alt="Semantic Versioning"></a>
+    <a href="http://choosealicense.com/licenses/mit/"><img src="https://img.shields.io/badge/license-MIT-red.svg?style=flat" alt="MIT License"></a>
+    <a href="https://github.com/psf/black"><img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: black"></a>   
+    <br />
+    <br />
 </p>
 
 ---
