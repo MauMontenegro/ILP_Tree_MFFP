@@ -5,6 +5,7 @@ import json
 import random as rnd
 import matplotlib.pyplot as plt
 
+
 # Function that split string of [u,v,p]
 # where (u,v) is an edge and p is the phase
 def GDN(dv_string):
@@ -14,24 +15,24 @@ def GDN(dv_string):
     return split_key
 
 
-def generateInstance(load):
+def generateInstance(load,directory):
     # Return [Tree,s_fire,Dist_Matrix,seed,scale,ax_pos,ay_pos]
     if load:
-        T = nx.read_adjlist("instance/MFF_Tree.adjlist")
+        T = nx.read_adjlist("Instances/"+ directory +"/MFF_Tree.adjlist")
         # Relabeling Nodes
         mapping = {}
         for node in T.nodes:
             mapping[node] = int(node)
         T = nx.relabel_nodes(T, mapping)
-        T_Ad_Sym = np.load("instance/FDM_MFFP.npy")
-        lay = open("instance/layout_MFF.json")
+        T_Ad_Sym = np.load("Instances/"+ directory +"/FDM_MFFP.npy")
+        lay = open("Instances/"+ directory +"/layout_MFF.json")
         pos = {}
         pos_ = json.load(lay)
 
         for position in pos_:
             pos[int(position)] = pos_[position]
         # Get Instance Parameters
-        p = open("instance/instance_info.json")
+        p = open("Instances/"+ directory +"/instance_info.json")
         parameters = json.load(p)
         N = parameters["N"]
         seed = parameters["seed"]
@@ -45,16 +46,16 @@ def generateInstance(load):
         T.add_node(N)
 
         # pos[N] = [a_x_pos, a_y_pos]
-        nx.draw_networkx(T, pos=pos)
-        nx.draw_networkx_nodes(T, pos, T.nodes, node_color="tab:red")
+        #nx.draw_networkx(T, pos=pos)
+        #nx.draw_networkx_nodes(T, pos, T.nodes, node_color="tab:red")
         # plt.show()
-        plt.savefig("Graph_Test.png")
+        #plt.savefig("Graph_Test.png")
 
         return T, N, starting_fire, T_Ad_Sym, seed, scale, a_x_pos, a_y_pos
 
     else:
         # Generate Random Tree with initial fire_root
-        N = 100  # Number of Nodes
+        N = 10  # Number of Nodes
         seed = 150  # Experiment Seed
         scale = 1  # Scale of distances
         starting_fire = rnd.randint(0, N - 1)  # Fire in random node
@@ -66,7 +67,7 @@ def generateInstance(load):
         print("Initial Bulldozer Position: [{bx},{by}]".format(bx=a_x_pos, by=a_y_pos))
 
         # Create a Random Tree (nx use a Prufer Sequence) and get 'pos' layout for nodes
-        T = nx.random_tree(n=N, seed=seed)
+        T = nx.random_tree(n=N, seed=seed,create_using=nx.erdos_renyi_graph(N, 0.5, seed=None, directed=False))
         # Induce a BFS path to get the fire propagation among levels
         T = nx.bfs_tree(T, starting_fire)
         # Could use spring or spectral Layout
@@ -76,10 +77,10 @@ def generateInstance(load):
         T_Ad = np.zeros((N + 1, N + 1))
 
         # Save Original Tree in a "adjlist" file
-        nx.write_adjlist(T, "MFF_Tree.adjlist")
-        nx.draw_networkx(T, pos=pos)
+        #nx.write_adjlist(T, "MFF_Tree.adjlist")
+        #nx.draw_networkx(T, pos=pos)
         # plt.show()
-        plt.savefig("Graph_Test.png")
+        #plt.savefig("Graph_Test.png")
 
         # Create Adjacency Matrix with escalated distances in layout
         for row in range(0, N):
