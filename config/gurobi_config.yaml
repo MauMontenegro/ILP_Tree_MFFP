@@ -1,0 +1,8 @@
+experiment:
+  mip_gap:  0.0 # Non-Optimal Solution
+  method: 1 #(0 or 1)
+  presolve: 2 # (1 conservative, 2 aggresive)
+  nodefilestart: 0.01 # To Save some nodes in disk
+  threads: 6 # Number of threads we want to use
+  nodefiledir: "/home/mauro/PycharmProjects/ILP_Tree_MFFP/gurobi_log"
+  presparsify: 1 # 1 to force
