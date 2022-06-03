@@ -1,38 +1,76 @@
+import argparse
 import re
 import networkx as nx
 import numpy as np
 import json
 import random as rnd
 import matplotlib.pyplot as plt
+import yaml
+from pathlib import Path
+import tracemalloc
+import time as tm
+
+def argParser(args):
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='''\
+        List of Available Integer Programming Solutions:
+            -IQP
+            -ILP
+            ''',
+        epilog='''python ipromoff.py -s ILP_MFF -m batch -l True -l True'''
+    )
+
+    parser.add_argument(
+        '--solver', '-s', type=str,
+        help="Type of Solver for MFFP (IQP or ILP).")
+    parser.add_argument(
+        '--mode', '-m', type=str,
+        help="Batch instances for stats or only one for testing")
+    parser.add_argument(
+        '--load', '-l', type=str,
+        help="True for load instance or False to create one")
+    parser.add_argument(
+        '--config', '-c', type=str,
+        help="Solver config file")
+
+    return parser.parse_known_args(args)[0]
 
 
-# Function that split string of [u,v,p]
-# where (u,v) is an edge and p is the phase
+def createSolver(solver):
+    import solvers as solvers
+    target_class = solver
+    if hasattr(solvers, target_class):
+        inputClass = getattr(solvers, target_class)
+    else:
+        raise AssertionError('There is no implemented Solver called {}'.format(target_class))
+    return inputClass
+
 def GDN(dv_string):
     new_string = re.sub(r"[\[]", "", dv_string)
     new_string = re.sub(r"[\]]", "", new_string)
     split_key = new_string.split(",")
     return split_key
 
-
-def generateInstance(load,directory):
+def generateInstance(load,path,directory):
     # Return [Tree,s_fire,Dist_Matrix,seed,scale,ax_pos,ay_pos]
     if load:
-        T = nx.read_adjlist("Instances/"+ directory +"/MFF_Tree.adjlist")
+        print(path)
+        T = nx.read_adjlist(path + "/"+ directory +"/MFF_Tree.adjlist")
         # Relabeling Nodes
         mapping = {}
         for node in T.nodes:
             mapping[node] = int(node)
         T = nx.relabel_nodes(T, mapping)
-        T_Ad_Sym = np.load("Instances/"+ directory +"/FDM_MFFP.npy")
-        lay = open("Instances/"+ directory +"/layout_MFF.json")
+        T_Ad_Sym = np.load(path + "/" + directory +"/FDM_MFFP.npy")
+        lay = open(path + "/" + directory +"/layout_MFF.json")
         pos = {}
         pos_ = json.load(lay)
 
         for position in pos_:
             pos[int(position)] = pos_[position]
         # Get Instance Parameters
-        p = open("Instances/"+ directory +"/instance_info.json")
+        p = open(path + "/" + directory +"/instance_info.json")
         parameters = json.load(p)
         N = parameters["N"]
         seed = parameters["seed"]
@@ -135,3 +173,48 @@ def generateInstance(load,directory):
             layout_file.write(json.dumps(pos))
 
         return T, N, starting_fire, T_Ad_Sym, seed, scale, a_x_pos, a_y_pos
+
+def getExpConfig(name, defpath=None):
+    if defpath is None:
+        path = Path.cwd() / 'config'
+    else:
+        path = Path(defpath)
+    pathFile = path / (name.strip() + '.yaml')
+
+    if not pathFile.exists() or not pathFile.is_file():
+        raise ValueError('Config Path either does not exists or is not a File')
+
+    config = yaml.safe_load(pathFile.open('r'))
+
+    return config
+
+def generateGraph(config):
+    threads = config['experiment']['threads']
+    nfilestart = config['experiment']['nodefilestart']
+
+    path_ILP="exp_results_ILP_" + str(threads) + '_' + str(nfilestart) + '.npy'
+    path_IQP="exp_results_IQP_" + str(threads) + '_' + str(nfilestart) + '.npy'
+    ILP = np.load(path_ILP)
+    IQP = np.load(path_IQP)
+
+    plt.plot(ILP[0],'r',label='ILP Solver')
+    plt.plot(IQP[0],'b',label='IQP Solver')
+    plt.legend(loc="upper left")
+    plt.xlabel("Node Instances")
+    plt.ylabel("Time in seconds")
+    plt.title("ILP vs IQP solution times with Threads:{t} and NodeFileStart:{n}".format(t=threads,n=nfilestart))
+    plt.savefig("ILP_IQP_{t}_{n}".format(t=threads,n=nfilestart),format='png')
+
+# Performance
+def tracing_start():
+    tracemalloc.stop()
+    print("nTracing Status : ", tracemalloc.is_tracing())
+    tracemalloc.start()
+    print("Tracing Status : ", tracemalloc.is_tracing())
+
+
+def tracing_mem():
+    first_size, first_peak = tracemalloc.get_traced_memory()
+    peak = first_peak / (1024 * 1024)
+    print("Peak Size in MB - ", peak)
+    return peak
