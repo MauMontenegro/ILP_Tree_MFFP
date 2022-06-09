@@ -3,13 +3,11 @@ Moving Firefighter Problem on Trees
 Integer Linear Programming Solution
 Author: Mauro Alejandro Montenegro Meza
 """
-import matplotlib.pyplot as plt
 import numpy
 import pulp as pl
 import networkx as nx
 import re
 import operator
-import utils
 from utils.utils import GDN
 from utils.utils import generateInstance
 from utils.utils import tracing_start
@@ -17,8 +15,11 @@ from utils.utils import tracing_mem
 import os
 from pathlib import Path
 import time as tm
+from gurobipy import *
 
 BN = 10000  # Big Number for Restrictions
+import numpy as np
+
 
 class ILP_MFF():
     def __init__(self, mode, load, path, config):
@@ -39,6 +40,195 @@ class ILP_MFF():
         for root, directories, files in self.w_path:
             directories.sort()
             for directory in directories:
+                print("\n\nCompute solution for {n} nodes".format(n=directory))
+                instance = generateInstance(self.load, self.path, str(directory))
+                T = instance[0]
+                N = instance[1]
+                starting_fire = instance[2]
+                T_Ad_Sym = instance[3]
+                seed = instance[4]
+                scale = instance[5]
+                a_x_pos = instance[6]
+                a_y_pos = instance[7]
+
+                # Pre-Compute Burning_Times for each node in T
+                levels = nx.single_source_shortest_path_length(
+                    T, starting_fire
+                )  # Obtain Level in Tree for each node
+
+                # --- MODEL---
+                m = Model("ILP_FF")
+                m.Params.outputFlag = 1  # 0 - Off  //  1 - On
+                m.setParam("MIPGap", self.config['experiment']['mip_gap'])
+                m.setParam("Method", self.config['experiment']['method'])
+                m.setParam("Presolve", self.config['experiment'][
+                    'presolve'])  # -1 - Automatic // 0 - Off // 1 - Conservative // 2 - Aggresive
+                m.setParam("NodefileStart", self.config['experiment']['nodefilestart'])
+                m.setParam("Threads", self.config['experiment']['threads'])
+
+                # ---InitialPos_Node_Variables----
+                # (X_phase0_node1), (X_phase0_node2), .... ,(X_phase0_nodeN)
+                initial_vars = []
+                for i in range(N):
+                    initial_vars.append(0)
+                    initial_vars[i] = m.addVar(vtype=GRB.BINARY, name="x,%s" % str(0) + "," + str(i))
+
+                # ---InitialPos_Node_Variables----
+                # (X_phase1_node0_node0), (X_phase1_node0_node1), .... ,(X_phase1_node0_nodeN),(X_phase1_node1_node0),...,(X_phase1_nodeN_nodeN)
+                # (X_phase2_node0_node0), (X_phase2_node0_node1), ...., (X_phase2_node0_nodeN),(X_phase2_node1_node0),...,(X_phase2_nodeN_nodeN)
+                vars = []
+                for i in range(N - 1):
+                    temp_1 = []
+                    for j in range(N):
+                        temp_2 = []
+                        for k in range(N):
+                            temp_2.append(0)
+                        temp_1.append(temp_2)
+                    vars.append(temp_1)
+
+                for phase in range(N - 1):
+                    for node_1 in range(N):
+                        for node_2 in range(N):
+                            vars[phase][node_1][node_2] = m.addVar(vtype=GRB.BINARY,
+                                                                   name="x,%s" % str(phase + 1) + "," + str(
+                                                                       node_1) + "," + str(node_2))
+
+                # -------- OBJECTIVE FUNCTION ----------
+                Nodes = list(T.nodes)
+                Nodes.remove(N)
+                Nodes.sort()
+                weights = np.zeros(N)
+                i = 0
+
+                for node in Nodes:
+                    weights[i] = len(nx.descendants(T, node)) + 1
+                    i += 1
+
+                # Sum initial vars to objective
+                objective = 0
+                weights_transpose = np.array(weights).T
+                objective += np.dot(weights_transpose, initial_vars)
+
+                # Sum rest of variables
+                for i in range(N - 1):
+                    for j in range(N):
+                        w_copy = weights_transpose.copy()
+                        w_copy[j] = 0
+                        objective += np.dot(w_copy, vars[i][j])
+                m.setObjective(objective, GRB.MAXIMIZE)
+
+                # ----------SUBJECT TO---------------------
+                # Constraint 1
+                sum_initial_vars = 0
+                for i in range(N):
+                    sum_initial_vars += initial_vars[i]
+                m.addConstr(sum_initial_vars == 1)
+
+                # Constraint 2
+                sum_vars = 0
+                for phase in range(N-1):
+                    sum_vars = 0
+                    for node_1 in range(N):
+                        for node_2 in range(N):
+                          sum_vars += vars[phase][node_1][node_2]
+                    m.addConstr(sum_vars == 1)
+
+                # Constraint 3
+                levels = nx.single_source_shortest_path_length(
+                    T, starting_fire
+                )
+                sorted_burning_times = numpy.zeros(N)
+
+                # Sorted Burning time for each node (from 0 to N)
+                for i in range(N):
+                    sorted_burning_times[i] = levels[i]
+
+                # Constraint for initial Position
+                initial_time_const = np.dot(T_Ad_Sym[N, 0:N], initial_vars)
+                initial_time_const_ = np.dot(sorted_burning_times.T, initial_vars)
+                m.addConstr(initial_time_const <= initial_time_const_, name="Init_time_Const")
+
+                # Constraint for next phases
+                for phase in range(N - 1):
+                    q_1 = 0
+                    q_2 = 0
+                    for phase_range in range(0, phase + 1):
+                        for node_i in range(N):
+                            for node_j in range(N):
+                                q_1 += T_Ad_Sym[node_i][node_j] * vars[phase_range][node_i][node_j]
+                    q_1 += initial_time_const
+                    for i in range(N):
+                        q_2 += np.dot(sorted_burning_times.T, vars[phase][i])
+                    m.addConstr(q_1 <= q_2, name="Q,%s" % str(phase))
+
+                # Constraint 4
+                leaf_nodes = [node for node in T.nodes() if T.in_degree(node) != 0 and T.out_degree(node) == 0]
+                restricted_ancestors = {}
+                for leaf in leaf_nodes:
+                    restricted_ancestors[leaf] = list(nx.ancestors(T, leaf))
+                    restricted_ancestors[leaf].remove(starting_fire)
+                    restricted_ancestors[leaf].insert(0, leaf)
+
+                for leaf in restricted_ancestors:
+                    l_q = 0
+                    for node in restricted_ancestors[leaf]:
+                        for phase in range(N - 1):
+                            for input_node in range(N):
+                                if input_node!= node:
+                                    l_q += vars[phase][input_node][node]
+                        l_q += initial_vars[node]
+                    m.addConstr(l_q <= 1)
+
+                # Constraint 5
+                for i in range(N):
+                    l_q = 0
+                    l_q += initial_vars[i]
+                    for j in range(N):
+                        for k in range(N):
+                            if j != i:
+                                l_q += vars[0][j][k]
+                    m.addConstr(l_q <= 1)
+
+                for i in range(N):  # For each node v
+                    l_q = 0
+                    for j in range(N - 2):  # For each phase
+                        l_q = 0
+                        for k in range(N):  # For each node u
+                            l_q += vars[j][k][i]
+                        for z in range(N):
+                            for p in range(N):
+                                if z != i:
+                                    l_q += vars[j + 1][z][p]
+                        m.addConstr(l_q <= 1)
+
+                # Constraint 6
+                c_1 = 0
+                c_2 = 0
+                for i in range(N):
+                    c_1 += initial_vars[i]
+                for j in range(N):
+                    for k in range(N):
+                        c_2 += vars[0][j][k]
+                m.addConstr(c_1 >= c_2)
+
+                # ----------------- Optimize Step--------------------------------
+                m.optimize()
+                runtime = m.Runtime
+                print("The run time is %f" % runtime)
+                print("Obj:", m.ObjVal)
+                self.saved.append(m.ObjVal)
+                self.times.append(runtime)
+                sol = []
+                for v in m.getVars():
+                    if v.X > 0:
+                        sol.append(v)
+                        print(v.varName)
+                self.solutions.append(sol)
+
+    def solve_pulp(self):
+        for root, directories, files in self.w_path:
+            directories.sort()
+            for directory in directories:
                 print("\n\nCompute solution for {n}".format(n=directory))
                 instance = generateInstance(self.load, self.path, str(directory))
                 T = instance[0]
@@ -51,8 +241,8 @@ class ILP_MFF():
                 a_y_pos = instance[7]
 
                 # Check and change LP Solver
-                solver_list = pl.listSolvers(onlyAvailable=True)
-                print(solver_list)
+                #solver_list = pl.listSolvers(onlyAvailable=True)
+                #print(solver_list)
                 # Build Node Structure for LP
                 Nodes = list(T.nodes)
                 Nodes.remove(starting_fire)
@@ -227,6 +417,7 @@ class ILP_MFF():
                 p0 = str(N)
 
                 for leaf in restricted_ancestors:
+                    #print(restricted_ancestors[leaf])
                     r = 0
                     for node in restricted_ancestors[leaf]:
                         # Generate only edges that goes to 'node'
@@ -247,6 +438,7 @@ class ILP_MFF():
                             lpv_edges_phase = pl.lpSum(lpvariables_[i] for i in valid_edges_keys)
                             r += lpv_edges_phase
                             counter += 1
+                        #print(r)
                     prob += (
                         r <= 1,
                         "Leaf_Restriction_{l},{n}".format(l=leaf, n=node),
@@ -327,8 +519,8 @@ class ILP_MFF():
                 solver = pl.GUROBI_CMD(options=[("Method", self.config['experiment']['method']),
                                                 ("NodefileStart", self.config['experiment']['nodefilestart']),
                                                 ("Threads", self.config['experiment']['threads']),
-                                                ("NodefileDir",os.getcwd() + '/' + 'gurobi_log'),
-                                                ("PreSparsify",self.config['experiment']['presparsify'])])
+                                                ("NodefileDir", os.getcwd() + '/' + 'gurobi_log'),
+                                                ("PreSparsify", self.config['experiment']['presparsify'])])
                 tracing_start()
                 start = tm.time()
 
@@ -367,6 +559,7 @@ class ILP_MFF():
 
                 sorted_sol = sorted(s.items(), key=operator.itemgetter(1))
                 self.solutions.append(sorted_sol)
+                print(sorted_sol)
 
     def getSolution(self):
         return self.solutions

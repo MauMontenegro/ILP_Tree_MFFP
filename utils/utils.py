@@ -197,6 +197,11 @@ def generateGraph(config):
     ILP = np.load(path_ILP)
     IQP = np.load(path_IQP)
 
+    print('ILP:')
+    print(ILP)
+    print('IQP')
+    print(IQP)
+
     plt.plot(ILP[0],'r',label='ILP Solver')
     plt.plot(IQP[0],'b',label='IQP Solver')
     plt.legend(loc="upper left")

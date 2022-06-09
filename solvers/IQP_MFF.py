@@ -174,6 +174,7 @@ class IQP_MFF():
                 for v in m.getVars():
                     if v.X > 0:
                         sol.append(v)
+                        print(v.varName)
                 self.solutions.append(sol)
 
     def getSolution(self):
