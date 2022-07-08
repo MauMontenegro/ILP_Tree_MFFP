@@ -22,6 +22,10 @@ class IQP_MFF():
         self.times = []
         self.solutions = []
         self.saved = []
+        self.n_variables= []
+        self.n_restrictions=[]
+        self.root_degree = []
+        self.max_degree = []
         if self.mode == 'batch':
             self.w_path = os.walk(Path.cwd() / 'Instances')
             self.path = path + '/Instances'
@@ -44,6 +48,8 @@ class IQP_MFF():
                 scale = instance[5]
                 a_x_pos = instance[6]
                 a_y_pos = instance[7]
+                self.max_degree.append(instance[8])
+                self.root_degree.append(instance[9])
 
                 print("Starting FIre")
                 print(instance[2])
@@ -71,6 +77,7 @@ class IQP_MFF():
                     for node in range(N):
                         vars[phase][node] = m.addVar(vtype=GRB.BINARY, name="x,%s" % str(phase) + "," + str(node))
                 m.update()
+                self.n_variables.append(N*N)
 
                 # -------- OBJECTIVE FUNCTION ----------
                 Nodes = list(T.nodes)
@@ -91,6 +98,7 @@ class IQP_MFF():
                     objective += np.dot(weights_transpose, vars_tmp)
                 m.setObjective(objective, GRB.MAXIMIZE)
 
+                count_const = 0
                 # ----------------------First Constraint---------------------------------
                 m.update()
                 sum_vars = 0
@@ -98,6 +106,7 @@ class IQP_MFF():
                     sum_vars = 0
                     for node in range(N):
                         sum_vars += vars[phase][node]
+                    count_const += 1
                     m.addConstr(sum_vars <= 1)
 
                 # --------------------------Second Constraint--------------------------------
@@ -115,6 +124,7 @@ class IQP_MFF():
                 # Constraint for initial Position
                 initial_const = np.dot(T_Ad_Sym[N, 0:N], vars[0])
                 initial_const_ = np.dot(sorted_burning_times.T, vars[0])
+                count_const += 1
                 m.addConstr(initial_const <= initial_const_, name="Init_Const")
 
                 for phase in range(1, N):
@@ -133,6 +143,7 @@ class IQP_MFF():
                     d = BN * (1 - d)
                     q_2 += d
 
+                    count_const += 1
                     m.addConstr(q_1 <= q_2, name="Q,%s" % str(phase))
 
                 # ----------------------Third Constraint --------------------------
@@ -151,6 +162,7 @@ class IQP_MFF():
                     for node in restricted_ancestors[leaf]:
                         for phase in range(N):
                             l_q += vars[phase][node]
+                    count_const += 1
                     m.addConstr(l_q <= 1)
 
                 # ----------------------------------Fourth Constrain-----------------------------------------
@@ -161,9 +173,13 @@ class IQP_MFF():
                     for node in range(N):
                         v_ += vars[phase][node]
                         vn_ += vars[phase + 1][node]
+                    count_const += 1
                     m.addConstr(v_ >= vn_)
 
+                self.n_restrictions.append(count_const)
+
                 # ----------------- Optimize Step--------------------------------
+                m.update()
                 m.optimize()
                 runtime = m.Runtime
                 print("The run time is %f" % runtime)
@@ -176,6 +192,7 @@ class IQP_MFF():
                         sol.append(v)
                         print(v.varName)
                 self.solutions.append(sol)
+                #m.write('IQP_model.lp')
 
     def getSolution(self):
         return self.solutions
@@ -186,8 +203,16 @@ class IQP_MFF():
     def getSaved(self):
         return self.saved
 
+    def getVariables_Restrictions(self):
+        return self.n_variables,self.n_restrictions
+
+    def getDegrees(self):
+        return self.root_degree, self.max_degree
+    
     def saveSolution(self):
         threads = self.config['experiment']['threads']
         nfilestart = self.config['experiment']['nodefilestart']
         name = 'exp_results_IQP_' + str(threads) +'_'+ str(nfilestart)
-        numpy.save(name, numpy.array([self.times, self.saved]))
+        numpy.save(name, numpy.array([self.times, self.saved, self.n_variables, self.n_restrictions,self.root_degree,self.max_degree]))
+
+

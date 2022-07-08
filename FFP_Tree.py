@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import scipy as sp
 import json
 import random
+from numpy import savetxt
 
 def hierarchy_pos(G, root=None, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5):
     '''
@@ -43,7 +44,7 @@ def hierarchy_pos(G, root=None, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5)
         else:
             root = random.choice(list(G.nodes))
 
-    def _hierarchy_pos(G, root, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5, pos=None, parent=None):
+    def _hierarchy_pos(G, root, width=2, vert_gap=0.5, vert_loc=0, xcenter=0.5, pos=None, parent=None):
         '''
         see hierarchy_pos docstring for most arguments
 
@@ -73,16 +74,18 @@ def hierarchy_pos(G, root=None, width=1., vert_gap=0.2, vert_loc=0, xcenter=0.5)
 
 
 # Generate Random Tree with initial fire_root
-seed = 4576
-N = 100
+seed = 1700
+N = 150
 starting_fire = 0
-T = nx.balanced_tree(2,4)
-
+T = nx.balanced_tree(5,3)
+#T = nx.random_tree(N,seed)
+#T = nx.random_tree(n=N, seed=seed,create_using=nx.erdos_renyi_graph(N, 0.5, seed=None, directed=False))
 # Induce a BFS path to get the fire propagation among levels
 T = nx.bfs_tree(T, starting_fire)
 
 # Saving Position Layout of T
 pos = hierarchy_pos(T, 0)
+#pos=nx.spring_layout(T, seed=seed)
 AdjacencyT = nx.to_numpy_array(T)
 
 # Save Original Tree in a file
@@ -90,7 +93,8 @@ nx.write_adjlist(T, "FF_Tree.adjlist")
 
 # Just Showing NX Tree
 nx.draw_networkx(T, pos=pos, with_labels=True)
-plt.show()
+#plt.show()
+plt.savefig("Graph_Test.png")
 
 # Saving Layout in to a json file
 for element in pos:
@@ -185,7 +189,8 @@ print("Status:", LpStatus[prob.status])
 # Each of the variables is printed with it's resolved optimum value
 solution = {}
 for v in prob.variables():
-    print(v.name, "=", v.varValue)
+    if v.varValue==1:
+        print(v.name, "=", v.varValue)
     node_name = v.name.split("_")
     solution[node_name[1]] = v.varValue
 
@@ -229,25 +234,9 @@ print(sol_restriction_levels)
 # The optimised objective function value is printed to the screen
 print("Total Saved Trees = ", value(prob.objective))
 
+textfile = open("solution_instances.txt", "w")
+for element in temp:
+    textfile.write(element + ",")
 
-
-
-# Now for next consecutive phases
-for i in range(0,N-1):
-    for item in items_per_phase[i]:
-        keys=[]
-        k_pos_var = lpvariables_per_phase[i][item]
-        valid_input_edge = GDN(item)[1]
-        sum = k_pos_var
-        for item_ in lpvariables_per_phase[i+1]:
-            valid_input_edge_ = GDN(item_)[0]
-            if int(valid_input_edge) != int(valid_input_edge_):  # Restriction over other nodes
-                keys.append(item_)
-        sum += lpSum(lpvariables_per_phase[i+1][j] for j in keys)
-        #print("Restriction in Phase: {p} for element {n}".format(p=i+1,n=item))
-        #print(sum)
-        prob += (
-            sum <= 1,
-            "Continuity_Restriction_{p},{n}".format(p=i,n=item),
-        )
-
+textfile.write("\n"+ str(value(prob.objective)))
+textfile.close()

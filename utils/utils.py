@@ -9,6 +9,7 @@ import yaml
 from pathlib import Path
 import tracemalloc
 import time as tm
+import os
 
 def argParser(args):
     parser = argparse.ArgumentParser(
@@ -83,13 +84,17 @@ def generateInstance(load,path,directory):
         T = nx.bfs_tree(T, starting_fire)
         T.add_node(N)
 
+        degrees = T.degree()
+        max_degree = max(j for (i, j) in degrees)
+        root_degree = T.degree[starting_fire]
+
         # pos[N] = [a_x_pos, a_y_pos]
         #nx.draw_networkx(T, pos=pos)
         #nx.draw_networkx_nodes(T, pos, T.nodes, node_color="tab:red")
         # plt.show()
         #plt.savefig("Graph_Test.png")
 
-        return T, N, starting_fire, T_Ad_Sym, seed, scale, a_x_pos, a_y_pos
+        return T, N, starting_fire, T_Ad_Sym, seed, scale, a_x_pos, a_y_pos, max_degree, root_degree
 
     else:
         # Generate Random Tree with initial fire_root
@@ -194,21 +199,56 @@ def generateGraph(config):
 
     path_ILP="exp_results_ILP_" + str(threads) + '_' + str(nfilestart) + '.npy'
     path_IQP="exp_results_IQP_" + str(threads) + '_' + str(nfilestart) + '.npy'
-    ILP = np.load(path_ILP)
-    IQP = np.load(path_IQP)
+    ILP = np.load(path_ILP,allow_pickle=True)
+    IQP = np.load(path_IQP,allow_pickle=True)
 
-    print('ILP:')
+    print('ILP times:')
     print(ILP)
-    print('IQP')
+    print('IQP times')
     print(IQP)
 
-    plt.plot(ILP[0],'r',label='ILP Solver')
-    plt.plot(IQP[0],'b',label='IQP Solver')
+    fig = plt.figure(figsize=(20, 10))
+    rows = 1
+    columns = 3 # Graphs for Time, variables and restrictions
+    print(IQP[2])
+    node_instances=[10,20,30,40]
+    #Plotting Time Solutions
+    fig.add_subplot(rows,columns,1)
+    plt.plot(ILP[0], 'o-',color='green',label='ILP Solver')
+    plt.plot(IQP[0], 'o-',color='blue',label='IQP Solver')
     plt.legend(loc="upper left")
     plt.xlabel("Node Instances")
     plt.ylabel("Time in seconds")
-    plt.title("ILP vs IQP solution times with Threads:{t} and NodeFileStart:{n}".format(t=threads,n=nfilestart))
-    plt.savefig("ILP_IQP_{t}_{n}".format(t=threads,n=nfilestart),format='png')
+    plt.title("Times")
+    plt.grid()
+
+    #Plotting Number of Variables
+    fig.add_subplot(rows, columns, 2)
+    plt.plot(ILP[2],'o-', color='green', label='ILP Solver')
+    plt.plot(IQP[2],'o-', color='blue', label='IQP Solver')
+    plt.legend(loc="upper left")
+    plt.xlabel("Node Instances")
+    plt.ylabel("Decision Variables")
+    plt.title("D.V.")
+    plt.grid()
+
+    #Plotting Number of Restrictions
+    fig.add_subplot(rows, columns, 3)
+    plt.plot(ILP[3],'o-', color='green', label='ILP Solver')
+    plt.plot(IQP[3],'o-', color='blue', label='IQP Solver')
+    plt.legend(loc="upper left")
+    plt.xlabel("Node Instances")
+    plt.ylabel("Restrictions")
+    plt.title("Restrictions")
+    plt.grid()
+
+    plt.savefig("ILP_IQP_{t}_{n}".format(t=threads, n=nfilestart), format='png')
+
+def generateGraphSeeds(config):
+    path=os.walk("Results")
+    for root, directories, files in path:
+        print(directories)
+
 
 # Performance
 def tracing_start():

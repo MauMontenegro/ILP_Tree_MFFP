@@ -6,13 +6,10 @@ Author: Mauro Alejandro Montenegro Meza
 import numpy
 import pulp as pl
 import networkx as nx
-import re
-import operator
 from utils.utils import GDN
 from utils.utils import generateInstance
 from utils.utils import tracing_start
 from utils.utils import tracing_mem
-import os
 from pathlib import Path
 import time as tm
 from gurobipy import *
@@ -29,6 +26,10 @@ class ILP_MFF():
         self.times = []
         self.solutions = []
         self.saved = []
+        self.n_restrictions = []
+        self.n_variables = []
+        self.root_degree = []
+        self.max_degree = []
         if self.mode == 'batch':
             self.w_path = os.walk(Path.cwd() / 'Instances')
             self.path = path + '/Instances'
@@ -50,6 +51,8 @@ class ILP_MFF():
                 scale = instance[5]
                 a_x_pos = instance[6]
                 a_y_pos = instance[7]
+                self.max_degree.append(instance[8])
+                self.root_degree.append(instance[9])
 
                 # Pre-Compute Burning_Times for each node in T
                 levels = nx.single_source_shortest_path_length(
@@ -71,8 +74,10 @@ class ILP_MFF():
                 initial_vars = []
                 for i in range(N):
                     initial_vars.append(0)
-                    initial_vars[i] = m.addVar(vtype=GRB.BINARY, name="x,%s" % str(0) + "," + str(i))
-
+                    if i != starting_fire:
+                        initial_vars[i] = m.addVar(vtype=GRB.BINARY, name="x,%s" % str(0) + "," + str(i))
+                m.update()
+                print(initial_vars)
                 # ---InitialPos_Node_Variables----
                 # (X_phase1_node0_node0), (X_phase1_node0_node1), .... ,(X_phase1_node0_nodeN),(X_phase1_node1_node0),...,(X_phase1_nodeN_nodeN)
                 # (X_phase2_node0_node0), (X_phase2_node0_node1), ...., (X_phase2_node0_nodeN),(X_phase2_node1_node0),...,(X_phase2_nodeN_nodeN)
@@ -89,10 +94,13 @@ class ILP_MFF():
                 for phase in range(N - 1):
                     for node_1 in range(N):
                         for node_2 in range(N):
-                            vars[phase][node_1][node_2] = m.addVar(vtype=GRB.BINARY,
-                                                                   name="x,%s" % str(phase + 1) + "," + str(
-                                                                       node_1) + "," + str(node_2))
-
+                            if (node_1 != starting_fire & node_2 != starting_fire):
+                                vars[phase][node_1][node_2] = m.addVar(vtype=GRB.BINARY,
+                                                                       name="x,%s" % str(phase + 1) + "," + str(
+                                                                           node_1) + "," + str(node_2))
+                m.update()
+                print('Decision Variables No Pulp')
+                print(vars)
                 # -------- OBJECTIVE FUNCTION ----------
                 Nodes = list(T.nodes)
                 Nodes.remove(N)
@@ -117,11 +125,13 @@ class ILP_MFF():
                         objective += np.dot(w_copy, vars[i][j])
                 m.setObjective(objective, GRB.MAXIMIZE)
 
+                count_const = 0
                 # ----------SUBJECT TO---------------------
                 # Constraint 1
                 sum_initial_vars = 0
                 for i in range(N):
                     sum_initial_vars += initial_vars[i]
+                count_const += 1
                 m.addConstr(sum_initial_vars == 1)
 
                 # Constraint 2
@@ -131,6 +141,7 @@ class ILP_MFF():
                     for node_1 in range(N):
                         for node_2 in range(N):
                           sum_vars += vars[phase][node_1][node_2]
+                    count_const += 1
                     m.addConstr(sum_vars == 1)
 
                 # Constraint 3
@@ -146,6 +157,7 @@ class ILP_MFF():
                 # Constraint for initial Position
                 initial_time_const = np.dot(T_Ad_Sym[N, 0:N], initial_vars)
                 initial_time_const_ = np.dot(sorted_burning_times.T, initial_vars)
+                count_const += 1
                 m.addConstr(initial_time_const <= initial_time_const_, name="Init_time_Const")
 
                 # Constraint for next phases
@@ -159,6 +171,7 @@ class ILP_MFF():
                     q_1 += initial_time_const
                     for i in range(N):
                         q_2 += np.dot(sorted_burning_times.T, vars[phase][i])
+                    count_const += 1
                     m.addConstr(q_1 <= q_2, name="Q,%s" % str(phase))
 
                 # Constraint 4
@@ -177,6 +190,7 @@ class ILP_MFF():
                                 if input_node!= node:
                                     l_q += vars[phase][input_node][node]
                         l_q += initial_vars[node]
+                    count_const += 1
                     m.addConstr(l_q <= 1)
 
                 # Constraint 5
@@ -187,6 +201,7 @@ class ILP_MFF():
                         for k in range(N):
                             if j != i:
                                 l_q += vars[0][j][k]
+                    count_const += 1
                     m.addConstr(l_q <= 1)
 
                 for i in range(N):  # For each node v
@@ -199,6 +214,7 @@ class ILP_MFF():
                             for p in range(N):
                                 if z != i:
                                     l_q += vars[j + 1][z][p]
+                        count_const += 1
                         m.addConstr(l_q <= 1)
 
                 # Constraint 6
@@ -209,8 +225,11 @@ class ILP_MFF():
                 for j in range(N):
                     for k in range(N):
                         c_2 += vars[0][j][k]
+                count_const += 1
                 m.addConstr(c_1 >= c_2)
 
+                print('Total Constraints')
+                print(count_const)
                 # ----------------- Optimize Step--------------------------------
                 m.optimize()
                 runtime = m.Runtime
@@ -239,6 +258,8 @@ class ILP_MFF():
                 scale = instance[5]
                 a_x_pos = instance[6]
                 a_y_pos = instance[7]
+                self.max_degree.append(instance[8])
+                self.root_degree.append(instance[9])
 
                 # Check and change LP Solver
                 #solver_list = pl.listSolvers(onlyAvailable=True)
@@ -318,6 +339,8 @@ class ILP_MFF():
                     lpvariables = pl.LpVariable.dicts("Defend", items_per_phase[phase - 1], 0, 1, pl.LpBinary)
                     lpvariables_per_phase.append(lpvariables)
 
+                self.n_variables.append((N-1)+(N-1)*(N-1)*N)
+
                 # Sum Decision Variables
                 lps = 0
                 counter = 0
@@ -340,12 +363,13 @@ class ILP_MFF():
                     "Sum_of_Defended_Edges",
                 )
 
+                count_const = 0
                 # Constraints
                 #################################################################################################################
                 # 1) At phase 0, we only enable at most one edge to be active from p_0 to any node v
 
                 first_constraint = pl.lpSum([lpvariables_init[i] for i in variables_init])
-
+                count_const += 1
                 prob += (
                     first_constraint == 1,
                     "Initial_Edges",
@@ -355,6 +379,7 @@ class ILP_MFF():
                 counter = 0
                 for lpvariables_ in lpvariables_per_phase:
                     cons = pl.lpSum([lpvariables_[i] for i in variables[counter]])
+                    count_const += 1
                     prob += (
                         cons == 1,
                         "Edges_Phase_%s" % counter,
@@ -371,6 +396,7 @@ class ILP_MFF():
                 )
                 cons_d = pl.lpSum([lpvariables_init[i] * levels[int(GDN(i)[1])] for i in variables_init])
 
+                count_const += 1
                 prob += (
                     cons_i <= cons_d,
                     "Initial_Distance_Restriction",
@@ -398,6 +424,7 @@ class ILP_MFF():
                     )
                     disable_r = BN * (1 - pl.lpSum([lpvariables_[i] for i in variables[counter]]))
                     dist_r_d += disable_r
+                    count_const += 1
                     prob += (
                         dist_r_i <= dist_r_d,
                         "Distance_Restriction_%s" % counter,
@@ -439,6 +466,7 @@ class ILP_MFF():
                             r += lpv_edges_phase
                             counter += 1
                         #print(r)
+                    count_const += 1
                     prob += (
                         r <= 1,
                         "Leaf_Restriction_{l},{n}".format(l=leaf, n=node),
@@ -459,6 +487,7 @@ class ILP_MFF():
                         ):  # Restriction over other nodes
                             keys.append(element_)
                     sum += pl.lpSum(lpvariables_per_phase[0][i] for i in keys)
+                    count_const += 1
                     prob += (
                         sum <= 1,
                         "Initial_Continuity_Restriction_{l}".format(l=element),
@@ -489,6 +518,7 @@ class ILP_MFF():
                         # print("Next Phase")
                         # print(keys_kp1)
                         sum += pl.lpSum(lpvariables_per_phase[phase + 1][j] for j in keys_kp1)
+                        count_const += 1
                         prob += (
                             sum <= rest,
                             "Continuity_Restriction_{p},{n}".format(p=node, n=phase),
@@ -497,6 +527,7 @@ class ILP_MFF():
                 # 7) We force solution to start at Agent initial position
                 force_init = pl.lpSum(lpvariables_init[i] for i in variables_init)
                 force_init_r = pl.lpSum(lpvariables_per_phase[0][i] for i in items_per_phase[0])
+                count_const += 1
                 prob += (
                     force_init >= force_init_r,
                     "Force_Initial",
@@ -559,7 +590,12 @@ class ILP_MFF():
 
                 sorted_sol = sorted(s.items(), key=operator.itemgetter(1))
                 self.solutions.append(sorted_sol)
-                print(sorted_sol)
+                self.n_restrictions.append(count_const)
+
+            print('Total Constraints')
+            print(self.n_restrictions)
+            print('Total Variables')
+            print(self.n_variables)
 
     def getSolution(self):
         return self.solutions
@@ -570,8 +606,17 @@ class ILP_MFF():
     def getSaved(self):
         return self.saved
 
+    def getVariables_Restrictions(self):
+        return self.n_variables, self.n_restrictions
+
+    def getDegrees(self):
+        return self.root_degree, self.max_degree
+
     def saveSolution(self):
         threads = self.config['experiment']['threads']
         nfilestart = self.config['experiment']['nodefilestart']
         name = 'exp_results_ILP_' + str(threads) + '_' + str(nfilestart)
-        numpy.save(name, numpy.array([self.times, self.saved]))
+        print(type(self.saved))
+        print(type(self.n_variables))
+        print(type(self.n_restrictions))
+        numpy.save(name, numpy.array([self.times, self.saved, self.n_variables, self.n_restrictions,self.root_degree,self.max_degree]))
